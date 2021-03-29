@@ -1,0 +1,115 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  dude-wheres-my-car
+
+  SAM Template for dude-wheres-my-car
+
+Parameters:
+  ENVIRONMENT:
+    Type: String
+    Default: PreProduction
+    AllowedValues:
+      - PreProduction
+      - Production
+    Description: The stages based on CI/CD Pipeline in CodePipeline
+
+Globals:
+  Function:
+    Runtime: python3.8
+    Environment:
+      Variables:
+        ENVIRONMENT: !Sub ${ENVIRONMENT}
+
+Resources:
+  DudeWheresMyCarApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub DudeWheresMyCarApi-${ENVIRONMENT}
+      StageName: !Sub ${ENVIRONMENT}
+      Auth:
+        ApiKeyRequired: True
+        UsagePlan:
+          CreateUsagePlan: PER_API
+          UsagePlanName: DudeWheresMyCarApiUsagePlan
+          Quota:
+            Limit: 50
+            Period: DAY
+          Throttle:
+            BurstLimit: 1
+            RateLimit: 1
+
+  DudeWheresMyCarLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub DudeWheresMyCarLogs-${ENVIRONMENT}
+      RetentionInDays: 14
+
+  DudeWheresMyCarCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub DudeWheresMyCarCluster-${ENVIRONMENT}
+      CapacityProviders:
+        - FARGATE
+        - FARGATE_SPOT
+
+  CarDetectionLearningTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      ContainerDefinitions:
+        - Name: !Sub DudeWheresMyCarECS-${ENVIRONMENT}
+          Image: !Sub 566719344773.dkr.ecr.us-west-2.amazonaws.com/dude-wheres-my-car:latest
+          Cpu: 2048
+          Memory: 4096
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref DudeWheresMyCarLogs
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ECS
+          Environment:
+            - Name: ENVIRONMENT
+              Value: !Sub ${ENVIRONMENT}
+      Family: !Sub DudeWheresMyCarECS-${ENVIRONMENT}
+      Cpu: "2048"
+      Memory: "4096"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: arn:aws:iam::566719344773:role/ecsTaskExecutionRole
+
+  WheresMyCarLearningStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Type: STANDARD
+      Name: !Sub DudeWheresMyCarStateMachine-${ENVIRONMENT}
+      DefinitionUri: StateMachine/WheresMyCarLearning.asl.json
+      DefinitionSubstitutions:
+        CarDetectionLearningTaskDefinitionArn: !Ref CarDetectionLearningTaskDefinition
+        DudeWheresMyCarClusterArn: !Ref DudeWheresMyCarCluster
+        AssignPublicIp: DISABLED
+        Subnet: subnet-93cef4b8
+        SecurityGroup: sg-6c57dd57
+      Policies:
+        - AmazonECS_FullAccess
+      Events:
+        WheresMyCarApi:
+          Type: Api
+          Properties:
+            Path: /WheresMyCar
+            Method: GET
+            RestApiId: !Ref DudeWheresMyCarApi
+
+Outputs:
+  WheresMyCarLearningStateMachine:
+    Description: "Arn for state machine"
+    Value: !Ref WheresMyCarLearningStateMachine
+  DudeWheresMyCarApi:
+    Description: "Endpoint URL in API Gateway for DudeWheresMyCar Task"
+    Value: !Sub "https://${DudeWheresMyCarApi}.execute-api.${AWS::Region}.amazonaws.com/send_garage_alert/"
+  DudeWheresMyCarCluster:
+    Description: "Arn for DudeWheresMyCar cluster"
+    Value: !Ref DudeWheresMyCarCluster
+  CarDetectionLearningTaskDefinition:
+    Description: "Arn for DudeWheresMyCar task definition"
+    Value: !Ref CarDetectionLearningTaskDefinition

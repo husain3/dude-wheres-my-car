@@ -1,0 +1,38 @@
+{
+    "Comment": "This is a state machine that coordinates tensorflow machine learning containers for object recognition learning",
+    "StartAt": "CarDetectionLearningContainer",
+    "States": {
+        "CarDetectionLearningContainer": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::ecs:runTask.sync",
+            "Parameters": {
+                "NetworkConfiguration": {
+                    "AwsvpcConfiguration": {
+                        "Subnets": [
+                            "${Subnet}"
+                        ],
+                        "SecurityGroups": [
+                            "${SecurityGroup}"
+                        ],
+                        "AssignPublicIp": "${AssignPublicIp}"
+                    }
+                },
+                "LaunchType": "FARGATE",
+                "Cluster": "${DudeWheresMyCarClusterArn}",
+                "TaskDefinition": "${CarDetectionLearningTaskDefinitionArn}"
+            },
+            "End": true, 
+            "Catch": [
+                {
+                    "ErrorEquals": [
+                        "States.ALL"
+                    ],
+                    "Next": "FailState"
+                }
+            ]
+        },
+        "FailState": {
+            "Type": "Fail"
+        }
+    }
+}
